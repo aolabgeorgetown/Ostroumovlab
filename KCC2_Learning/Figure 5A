@@ -1,0 +1,465 @@
+
+
+load ('Burst_times_USonly2882_GADcre_Arch_1.mat')
+
+burst_times_baseline{1,1} = all_burst_times {1,106}
+
+burst_times_baseline{1,2} = all_burst_times {1,5}
+
+burst_times_baseline{1,3} = all_burst_times {1,36}
+
+burst_times_baseline{1,4} = all_burst_times {1,54}
+
+burst_times_baseline{1,5} = all_burst_times {1,52}
+
+
+
+%
+
+load ('Burst_times_USonly2882_GADcre_Arch_4.mat')
+
+burst_times_acquisition{1,1} = all_burst_times {1,55}
+
+burst_times_acquisition{1,2} = all_burst_times {1,15}
+
+burst_times_acquisition{1,3} = all_burst_times {1,188}
+
+burst_times_acquisition{1,4} = all_burst_times {1,45}
+
+burst_times_acquisition{1,5} = all_burst_times {1,93}
+
+
+
+
+
+%
+
+
+
+for i = 1:5
+
+    burst_times = burst_times_acquisition {1,i}
+
+    burst_times_acquisition {1,i} = burst_times - burst_times(1) + 0.001
+
+end 
+
+
+
+for i = 1:5
+
+    burst_times = burst_times_baseline {1,i}
+
+    burst_times_baseline {1,i} = burst_times - burst_times(1) + 0.001
+
+end 
+
+
+
+%
+
+save ('burst_times.mat', 'burst_times_baseline', 'burst_times_acquisition')
+
+
+
+
+
+figure()
+
+ 
+
+for i = 1:5
+
+    burst_times = burst_times_baseline {1,i}
+
+    triallen = 1
+
+    numtrials = 5
+
+    trialno = i
+
+    seconds = 1
+
+    [yy]=  plotraster(burst_times,seconds,trialno,triallen,numtrials)
+
+end 
+
+title ('baseline')
+
+xlim ([0 1])
+
+hold off
+
+fig = gcf;
+
+print(fig,'2882_baseline_burst.svg','-dsvg');
+
+
+
+
+
+figure()
+
+
+
+
+
+for i = 1:5
+
+    burst_times = burst_times_acquisition {1,i}
+
+   triallen = 1
+
+    numtrials = 5
+
+    trialno = i
+
+    seconds = 1
+
+    [yy]=  plotraster(burst_times,seconds,trialno,triallen,numtrials)
+
+end 
+
+title ('acquisition')
+
+xlim ([0 1])
+
+hold off
+
+
+
+fig = gcf;
+
+print(fig,'2882_acquisition_burst.svg','-dsvg');
+
+
+
+%%
+
+    load('spiketimes_VTAGABA.mat')
+
+    
+
+    label = '2882_GADcre_Arch_4'
+
+
+
+    clear all_spb 
+
+    
+
+    averagespb = [];
+
+    averagebd = [];
+
+    averagefreq = [];
+
+    all_spb = {};
+
+    all_bd = {};
+
+    all_freq = {}
+
+    timeafter_stim = 5;
+
+    epoch = 3%2 = CS, %3 = postCS
+
+    tonic_all = {};
+
+    neuronno = 1
+
+    %for okay =neuronno:neuronno;
+
+    for okay = 1: length(indexofVTADA) ;
+
+
+
+        neuronid = indexofVTADA (okay) ;
+
+        preCS= preCS_tot{1,neuronid};
+
+        CS= CS_tot {1,neuronid};
+
+        postCS = postCS_tot{1,neuronid};
+
+        all_burst_times = {};
+
+        all_tonic_times = {} 
+
+            for i = 1:length(preCS);
+
+                preCS_1 = preCS{1,i} ;
+
+                CS_1 =  CS{1,i};
+
+                postCS_1 =  postCS{1,i};
+
+                [burst_times, tonic_times] = detect_bursts( preCS_1 (preCS_1<timeafter_stim)) ;
+
+                [burst_times_CS , tonic_times_CS]= detect_bursts( CS_1 (CS_1<timeafter_stim));
+
+                [burst_times_postCS, tonic_times_postCS] = detect_bursts( postCS_1 (postCS_1<timeafter_stim));
+
+
+
+                if epoch == 2
+
+                    all_burst_times = [all_burst_times, burst_times_CS]
+
+                    all_tonic_times{i} = tonic_times_CS;
+
+                    %burst_times_postCS , burst_times ];
+
+
+
+                else epoch == 3
+
+                     all_burst_times = [all_burst_times, burst_times_postCS]
+
+                    all_tonic_times{i} = tonic_times_postCS;
+
+                    %burst_times_postCS , burst_times ];
+
+                end 
+
+            end
+
+        tonic_all{okay} = all_tonic_times;
+
+
+
+        spikesperburst = cellfun(@length, all_burst_times)';
+
+        all_spb {okay} =  spikesperburst;
+
+
+
+        averagespikesperburst = mean(spikesperburst);
+
+        averagespb = [averagespb, averagespikesperburst];
+
+        display ("Average Spikes per Burst is : " + averagespikesperburst);
+
+
+
+        burstdurations = cellfun( @allduration, all_burst_times )';
+
+        all_bd {okay} = burstdurations;
+
+        all_freq {okay} = spikesperburst ./ burstdurations
+
+        averagebd = [averagebd, mean(burstdurations)];
+
+        averagefreq = [averagefreq, mean(spikesperburst ./ burstdurations)];
+
+
+
+    end 
+
+    average_tonic = [];
+
+    for i = 1: length(tonic_all);
+
+       % tonic = cellfun(@diff, tonic_all{1,i}, 'UniformOutput', false) 
+
+        %tonic = cellfun(@instantaneous_freq, tonic, 'UniformOutput', false)
+
+        %tonic_out = cellfun(@mean, tonic, 'UniformOutput', false)
+
+        tonic_out = cellfun(@length, tonic_all{1,i}, 'UniformOutput', false);
+
+       % tonic_out(cellfun(@(tonic_out) any(isnan(tonic_out)),tonic_out)) = {0}
+
+        average_tonic(i) = mean(cell2mat(tonic_out))/ 5;
+
+       % average_tonic(i) = mean(cell2mat(tonic_out))
+
+    end 
+
+  
+
+    
+
+    total_burst = cellfun(@length, all_spb)
+
+    average_freq = cellfun(@mean, all_freq)    
+
+    
+
+    cd ('C:\Users\AO711.la\Box\KCC2 Learning Paper Dataset\Figure 5\Phasic firing figure')
+
+    
+
+    save ('Burst_times_USonly' + string(label) + '.mat', 'indexofVTADA', 'averagespb', 'all_burst_times')
+
+    
+
+    
+
+    %%
+
+function  [burst_all, tonic_spikes]  = detect_bursts(data); %%
+
+
+
+    i = 2;
+
+    tonic_spikes = [] ;
+
+    burst_all  ={};
+
+
+
+    while i <= length(data);
+
+    isi = data(i) - data(i-1);
+
+
+
+        if isi < 0.080;
+
+            burst = [data(i-1), data(i)];
+
+            i = i + 1;
+
+
+
+            while i <= length(data) && data(i) - data(i-1) < 0.160;
+
+                burst = [burst, data(i)];
+
+                i = i + 1;
+
+            end
+
+            if length(burst) > 2;
+
+                burst_all {end + 1} = burst;
+
+            end 
+
+        else
+
+            i = i + 1;
+
+             
+
+        end
+
+    end
+
+    tonic_spikes = data;
+
+    for bursts = 1: length(burst_all);
+
+        tonic_spikes = setdiff(tonic_spikes, burst_all{bursts});
+
+    end 
+
+    
+
+   % display("done");
+
+end 
+
+function duration = allduration (cell);
+
+    duration = cell(end) - cell(1);
+
+end 
+
+function [yy]=  plotraster(times,seconds,trialno,triallen,numtrials)
+
+    times = times(times<seconds)
+
+    fs= 1000
+
+        %%%%%%%%%%%%%% Plot variables %%%%%%%%%%%%%%
+
+    plotwidth=1;     % spike thickness
+
+    plotcolor='k';   % spike color
+
+    trialgap=1.5;    % distance between trials
+
+    defaultfs=1000;  % default sampling rate
+
+    showtimescale=1; % display timescale
+
+    showlabels=1;    % display x and y labels
+
+
+
+      hresp=gca;
+
+
+
+
+
+
+
+      trials=ceil(times/triallen);
+
+
+
+      trials = trials * trialno
+
+      reltimes=mod(times,triallen);
+
+      reltimes(~reltimes)=triallen;
+
+      numspikes=length(times);
+
+      xx=ones(3*numspikes,1)*nan;
+
+      yy=ones(3*numspikes,1)*nan;
+
+
+
+      yy(1:3:3*numspikes)=(trials-1)*trialgap;
+
+      yy(2:3:3*numspikes)=yy(1:3:3*numspikes)+1;
+
+
+
+      %scale the time axis to ms
+
+      xx(1:3:3*numspikes)=reltimes*1000/fs;
+
+      xx(2:3:3*numspikes)=reltimes*1000/fs;
+
+      xlim=[0,triallen];
+
+
+
+      axes(hresp);
+
+      h=plot(xx, yy, plotcolor, 'linewidth',plotwidth);
+
+    
+
+
+
+      if (showtimescale)
+
+        set(hresp, 'ytick', [],'tickdir','out');        
+
+      else
+
+        set(hresp,'ytick',[],'xtick',[]);
+
+      end
+
+
+
+      if (showlabels)
+
+        xlabel('Time(s)');
+
+        ylabel('Trials');
+
+      end 
+
+       hold on
+
+  end
