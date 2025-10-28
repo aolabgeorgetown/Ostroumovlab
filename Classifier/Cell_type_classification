@@ -1,0 +1,24 @@
+ans = dir('*cell_metrics*')
+
+acg_tau_rise = log10(cell_metrics.acg_tau_rise)'
+acg_tau_decay = log10(cell_metrics.acg_tau_decay)'
+firing_rate = log10( cell_metrics.firingRate)'
+firing_rateCV = log10( cell_metrics.firingRateCV)'
+trough_to_peak = cell_metrics.troughToPeak'
+acg_asymptote = cell_metrics.acg_asymptote' 
+acg_tau_burst= cell_metrics.acg_tau_burst'
+firingRateISI = log10(cell_metrics.firingRateISI)'
+putativeCellType = strrep(cell_metrics.putativeCellType' , 'Unidentified', '')
+
+a = strcmp(putativeCellType, 'VTA DA')
+b = strcmp(putativeCellType, 'VTA GABA')
+forclassifier = table(acg_tau_rise,firing_rate,firingRateISI, firing_rateCV ,acg_asymptote, trough_to_peak, acg_tau_decay,acg_tau_burst, putativeCellType)
+
+labeledneurons = trainedModel0821.predictFcn(forclassifier)
+str = 'VTA GABA'
+strDA = 'VTA DA' 
+a = strcmp(labeledneurons, str)
+b = strcmp(labeledneurons, strDA)
+indexofVTAGABA = find(a >0) 
+indexofVTADA = find(b >0) 
+indexofVTADA = setdiff(indexofVTADA, indexofVTAGABA)
