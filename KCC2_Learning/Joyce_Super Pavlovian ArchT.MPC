@@ -1,0 +1,852 @@
+\-------------------------------------------------------------------------
+\ C1 Cue Conditioning
+\ Version: 1.02
+\ Created by Shaun Khoo (May/June 2017)
+\ >('.')<
+\ http://orcid.org/0000-0002-0972-3788
+\-------------------------------------------------------------------------
+
+\CONSTANTS
+\SESSION CONTROL VARIABLES
+^PreSessionDelay = 10        \Delay in seconds
+^Trials = 50            \Number of trials. Supports values up to 30.
+^MeanITI = 45            \Mean ITI value in s
+^ITIvariance = 5        \Value to vary the ITI by (+/-)
+^CSduration = 5        \CS duration in seconds
+^USduration = 5            \Pump duration in seconds
+^CueSelect = 2           \Default cue selection. 1 = Click, 2 = Whitenoise.
+^ClickFreq = 5            \Click frequency in seconds, max 10
+^AlertLongPE = 15        \Length of a 'Long PE' to alert the user to in seconds
+^AlertShortPE = 20        \Length of a 'Short PE' to alert the user to in ms
+^AlertIRI = 200            \Length of a 'Short Inter-Response Interval' to alert the user to in ms
+^ComeBack = 1            \Number of minutes before the end of the session to come back
+^version = 102            \Version number. Will be divided by 100
+
+\INPUTS
+^DisPortEntry = 3        \Discrete port entry. Will occur once per port entry/beam break
+^ConPortEntry = 4        \Continuous port entry. Will occur every 10ms (system resolution
+                \as long as the beam is broken).
+
+\OUTPUTS
+^TTLOPTO = 1
+^TTLONLY = 2
+^Houselight = 7
+^Clicker = 10
+^LightReceptacle = 6
+^Whitenoise = 8
+^Pump = 3
+
+\Z-PULSES
+^StartPreCS = 1
+^StartCS = 2
+^StartPostCS = 3
+^ITItime = 4
+^SessionBegin = 5
+^Mastered = 6
+^NoFriends = 8
+^Shutdown = 9
+
+
+\K-PULSES
+\K-Pulses 1-12 are reserved for boxes.
+^NewBoxLoaded = 13
+^Acceptance = 14
+^Reacquire = 15
+^ReadyITI = 16
+^Collected = 17
+^GOGOGO = 18
+
+
+\VARIABLES
+\VARIABLES - DATA - Session Totals
+DIM A = 16
+\Delay Port Entries = A(0)
+\Total Port Entries = A(1) [NB: Does not include 'delay']
+\ITI Port Entries = A(2)
+\PreCS Port Entries = A(3)
+\CS Port Entries = A(4)
+\PostCS (US) Port Entries = A(5)
+\Norm-CS = A(6) [Norm-CS is calculated as CS Port Entries - PreCS Port Entries]
+\Delay PE Durations = A(7)
+\Total PE Durations = A(8)
+\ITI PE Durations = A(9)
+\PreCS PE Durations = A(10)
+\CS PE Durations = A(11)
+\PostCS PE Durations = A(12)
+\Norm-CS Duration = A(13) [Norm-CS Duration is CS PE Duration - PreCS PE Duration]
+\Long PE Alerts = A(14) [Number of PE Durations greater than 15 s]
+\Short Duration Alerts = A(15) [Number of 5 point moving averages with PE Duration < 0.02 s]
+\Short IRI Alerts = A(16) [Number of 5 point moving averages with inter-response interval < 0.2 s]
+
+\VARIABLES - DATA - Chronicling
+DIM B = 10000    \All Event Identities,        subscript S
+DIM C = 10000    \All Event Times,        subscript S
+
+\VARIABLES - DATA - Trial Bins
+DIM D = 10000    \ITI Port Entries,        subscript T
+DIM E = 10000    \ITI Port Entry Durations,    subscript T
+DIM F = 10000    \III Port Entry Latencies,    subscript T
+DIM G = 10000    \PreCS Port Entries,        subscript T
+DIM H = 10000    \PreCS Port Entry Durations,    subscript T
+DIM I = 10000    \PreCS Port Entry Latencies,    subscript T
+DIM J = 10000    \CS Port Entries,        subscript T
+DIM K = 10000    \CS Port Entry Durations,    subscript T
+DIM L = 10000    \CS Port Entry Latencies,    subscript T
+DIM M = 10000    \PostCS Port Entries,        subscript T
+DIM N = 10000    \PostCS Port Entry Durations,    subscript T
+DIM O = 10000    \PostCS Port Entry Latencies,    subscript T
+
+\VARIABLES - DATA - Timecourse Arrays
+DIM P = 10000    \All Port Entry Timestamps,    subscript U
+DIM Q = 10000    \All Port Entry Durations,    subscript U
+DIM R = 10000    \Trial responses relative to CS, subscript V
+
+\VARIABLES - CONTROL - ITI LISTS
+\Supports up to 30 trials. Will be generated algorithmically, subscript Y
+LIST W = 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+41,42,43,44,45,46,47,48,49,50,51
+
+\VARIABLES - CONTROL - WORKING VARIABLES
+DIM X = 76
+\X(0) = Session Clock (seconds)
+\X(1) = Centisecond Clock
+\X(2) = Trial Clock
+\X(3) = Trial Component Clock
+\X(4) = Period countdown clock
+\X(5) = ITI selector
+\X(6) = ITI number
+\X(7) = Click ON/OFF time
+\X(8) = SECSTODAY at Start
+\X(9) = Expected End Time
+\X(10) = Come Back Hours
+\X(11) = Come Back Minutes
+\X(12) = Master Box Calling Iterations
+\X(13) = Z(2) memory
+\X(14) = Z(3) memory
+\X(15) = Z(4) memory
+\X(16) = IRI1
+\X(17) = IRI2
+\X(18) = IRI3
+\X(19) = IRI4
+\X(20) = IRI5
+\X(21) = ARITHMETICMEAN X(16) to X(20)
+\X(22) = ARITHMETICMEAN Q(U-5) to Q(U-1)
+\X(23) = Current PE Trial
+\X(24) = T memory value
+\X(25) - X(75) = Temporary List W holding and randomisation
+
+\VARIABLES - CONTROL - SESSION PARAMETERS
+DIM Z = 65
+var_alias Session Length (s) = Z(0)
+var_alias Pre Session Delay (s) = Z(1)
+var_alias Number of Trials = Z(2)
+var_alias Mean ITI Duration (s) = Z(3)
+var_alias ITI varies by (s) = Z(4)
+var_alias CS Duration (s) = Z(5)
+var_alias US Duration (s) = Z(6)
+var_alias Cue (1Click 2Whitenoise) = Z(7)
+var_alias Click Frequency (Hz) = Z(8)
+var_alias Master Box = Z(9)
+var_alias Long PE Definition (s) = Z(10)
+var_alias Short PE Definition (s) = Z(11)
+var_alias Short IRI Definition (s) = Z(12)
+var_alias Version = Z(13)
+\Z(14) - Z(65) are reserved for the ITIs
+
+DISKVARS = A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, W, Z
+DISKOPTIONS = FULLHEADERS
+DISKFORMAT = 16.3
+DISKCOLUMNS = 1
+Y2KCOMPLIANT
+
+\-------------------------------------------------------------------------
+\State Set 1 - Control Program
+
+S.S.1,
+S1,    \State 1 sets the default variables
+    0.01": SET Z(1) = ^PreSessionDelay, Z(2) = ^Trials;
+    SET Z(3) = ^MeanITI, Z(4) = ^ITIvariance, Z(5) = ^CSduration;
+    SET Z(6) = ^USduration, Z(7) = ^CueSelect, Z(8) = ^ClickFreq;
+    SET Z(10) = ^AlertLongPE, Z(11) = ^AlertShortPE / 1000, Z(12) = ^AlertIRI / 1000;
+    SET Z(13) = ^version / 100;
+
+    \Seal all the arrays
+    SET B(S+1) = -987.987, C(S+1) = -987.987;
+    SET D(T+1) = -987.987, E(T+1) = -987.987, F(T+1) = -987.987;
+    SET G(T+1) = -987.987, H(T+1) = -987.987, I(T+1) = -987.987;
+    SET J(T+1) = -987.987, K(T+1) = -987.987, L(T+1) = -987.987;
+    SET M(T+1) = -987.987, N(T+1) = -987.987, O(T+1) = -987.987;
+    SET P(U+1) = -987.987, Q(U+1) = -987.987, R(V+1) = -987.987;
+
+    SHOW 1, Initialising, Z(0); K^NewBoxLoaded ---> S2
+
+S2,    \State 2 waits for slave boxes to declare they have finished collecting
+    \or for the master box to stop waiting (Z^NoFriends)
+    #K^Collected ! #Z^NoFriends: SUMARRAY Z(0) = Z, 14, Z(2) + 14;
+    SET Z(0) = Z(0) + (Z(2) * 3 * Z(5)) ---> S3
+
+    \The NewBoxLoaded K-Pulse resets the counter on the master box competition
+    \Alternatively, it returns boxes to the beginning of the competition
+
+    #K^NewBoxLoaded ! #K^Reacquire: SET X(12) = 0 ---> SX
+
+    \K-Pulse responsivity code is placed here to ensure that there are no
+    \collisions from the time input in S.S.6, S1.
+
+    #K9: SET Z(9) = 9; SHOW 1, Setting Master, Z(9) ---> SX
+    #K10: IF (Z(9) = 0) OR (Z(9) > 10) [@SET, @IGNORE]
+        @SET: SET Z(9) = 10; SHOW 1, Setting Master, Z(9) ---> SX
+        @IGNORE: ---> SX
+
+S3,    \State 3 waits for the Start Command
+    #K^GOGOGO: SET X(0) = 0 - Z(1); SHOW 1, Session Time, X(0);
+    SHOW 3, Time to Trial, Z(14); SHOW 4, Number of Trials, Z(2);
+    SET STARTHOURS = CURRENTHOURS, STARTMINUTES = CURRENTMINUTES;
+    SET STARTSECONDS = CURRENTSECONDS; IF Z(7) < 1.5 [@CLICK, @WHITENOISE]
+        @CLICK: SHOW 2, Clicker CS, Z(7) ---> S4
+        @WHITENOISE: SHOW 2, Whitenoise CS, Z(7) ---> S4
+
+    #K^NewBoxLoaded ! #K^Reacquire: SET X(12) = 0 ---> S2
+
+S4,    \State 4 counts down the delay
+    1": ADD X(0); SHOW 1, Session Time, X(0);
+    IF X(0) >= 0 [@LIGHTSON, @WAIT]
+        @LIGHTSON: Z^SessionBegin; CLEAR 11, 11 ---> S5
+        @WAIT: ---> SX
+
+S5,    \State 5 continues counting
+    1": ADD X(0); SHOW 1, Session Time, X(0) ---> SX
+
+    #Z^Shutdown: SET A(6) = A(4) - A(3), A(13) = A(11) - A(10) ---> S6
+
+S6,    \State 6 waits for 1 second and closes the program.
+    1": ---> STOPABORTFLUSH
+
+\-------------------------------------------------------------------------
+\State Set 2 - Centisecond Clock
+
+S.S.2,
+S1,    \State 1 waits for the start command
+    #K^GOGOGO: SET X(1) = 0 - Z(1); SET F(T) = -1;
+    SET I(T) = -1, L(T) = -1, O(T) = -1 ---> S2
+
+S2,    \State 2 counts upwards in 10ms increments
+    0.01": SET X(1) = X(1) + 0.01, X(2) = X(2) + 0.01 ---> SX
+    #Z^StartPreCS: SET X(2) = 0 - Z(5), X(3) = 0 ---> S3
+
+    #Z^Shutdown: ---> S4
+
+S3,    \State 3 counts upwards in 10 ms increments during a trial
+    0.01": SET X(1) = X(1) + 0.01, X(2) = X(2) + 0.01, X(3) = X(3) + 0.01 ---> SX
+
+    #Z^StartCS ! #Z^StartPostCS: SET X(3) = 0 ---> SX
+    #Z^ITItime: SET X(2) = 0, X(3) = 0;
+    ADD X(6); IF X(6) > Z(2) [@FINALITI, @NORMAL]
+        @FINALITI: SUB X(6); SHOW 3, Trials Complete, X(6); ADD T;
+        SET D(T) = 0, E(T) = 0, F(T) = X(4);
+        SET D(T+1) = -987.987, E(T+1) = -987.987, F(T+1) = -987.987 ---> S2
+        @NORMAL: SHOW 3, Trial Number, X(6); ADD T;
+        SET D(T) = 0, E(T) = 0, F(T) = -1;
+        SET G(T) = 0, H(T) = 0, I(T) = -1;
+        SET J(T) = 0, K(T) = 0, L(T) = -1;
+        SET M(T) = 0, N(T) = 0, O(T) = -1;
+        SET D(T+1) = -987.987, E(T+1) = -987.987, F(T+1) = -987.987;
+        SET G(T+1) = -987.987, H(T+1) = -987.987, I(T+1) = -987.987;
+        SET J(T+1) = -987.987, K(T+1) = -987.987, L(T+1) = -987.987;
+        SET M(T+1) = -987.987, N(T+1) = -987.987, O(T+1) = -987.987;
+        SET R(V) = - 999.999; ADD V; SET R(V) = -987.987 ---> S2
+
+    #Z^Shutdown: ---> S4
+
+S4,    \State 4 is a holding state
+    #START: ---> SX
+
+\-------------------------------------------------------------------------
+\State Set 3 - Trial Management
+
+S.S.3,
+S1,    \State 1 waits for the SessionBegin Z-Pulse
+    #Z^SessionBegin: SET Y = 14, X(6) = Y - 13, X(4) = Z(Y);
+    SHOW 2, Time to Trial, X(4); SHOW 3, Trial Number, X(6);
+    ON ^Houselight, ^TTLONLY; SET B(S) = ^Houselight, C(S) = X(1);
+    ADD S; SET B(S) = -987.987, C(S) = -987.987 ---> S2
+
+S2,    \State 2 counts down until the next trial
+    1": SUB X(4); SHOW 2, Time to Trial, X(4); OFF ^TTLONLY;
+    IF X(4) <= 0 [@BEGINPRECS, @WAIT]
+        @BEGIN: Z^StartPreCS; ON ^TTLOPTO; SET X(4) = Z(5);
+        SHOW 2, Pre-CS Time, X(4) ---> S3
+        @WAIT: ---> SX
+
+S3,    \State 3 waits for the PreCS period to finish
+    1": SUB X(4); SHOW 2, Pre-CS Time, X(4);
+    IF X(4) <= 0 [@BEGINCS, @WAIT]
+        @BEGINCS: Z^StartCS; OFF ^TTLOPTO; SET X(4) = Z(5);
+        SHOW 2, CS Time, X(4) ---> S5
+        @WAIT: ---> SX
+
+S4,    \State 4 waits for the CS period to finish
+    5": OFF ^TTLOPTO; SUB X(4); SHOW 2, CS Time, X(4);
+    IF X(4) <= Z(6) [@PUMPON, @WAIT]
+        @PUMPON: ON ^Pump, ^LightReceptacle;
+        SET B(S) = ^Pump, C(S) = X(1);
+        ADD S; SET B(S) = -987.987, C(S) = -987.987 ---> S5
+        @WAIT: ---> SX
+
+S5,    \State 5 waits to end the CS and Pump operant
+    1": SUB X(4); SHOW 2, CS Time, X(4);
+    IF X(4) <= 0 [@POSTCS, @WAIT]
+        @POSTCS: Z^StartPostCS; SET X(4) = Z(5);
+        SHOW 2, Post-CS Time, X(4);
+        ON ^Pump, ^LightReceptacle;
+        SET B(S) = ^Pump, C(S) = X(1);
+        ADD S; SET B(S) = -987.987, C(S) = -987.987---> S6
+        @WAIT: ---> SX
+
+S6,    \State 6 waits for the PostCS period to finish
+    1": SUB X(4); SHOW 2, Post-CS Time, X(4);
+    IF X(4) <= 0 [@ITI, @WAIT]
+        @ITI: ADD Y; SET X(4) = Z(Y); OFF ^LightReceptacle, ^Pump;
+        IF X(4) <= 0 [@WTF, @CHECK]
+            @WTF: SHOW 2, No Further ITI!, X(4) ---> S8
+            @CHECK: Z^ITItime; IF Z(Y+1) <= 0 [@LASTITI, @CONTINUE]
+                @LASTITI: SHOW 2, Final Interval, X(4) ---> S7
+                @CONTINUE: SHOW 2, Time to Trial, X(4) ---> S2
+        @WAIT: ---> SX
+
+S7,    \State 7 waits for the last ITI to finish
+    1": SUB X(4); SHOW 2, Final Interval, X(4);
+    IF X(4) <= 0 [@SHUTDOWN, @WAIT]
+        @SHUTDOWN: Z^Shutdown; SHOW 2, Session Complete, X(4) ---> S8
+        @WAIT: ---> SX
+
+S8,    \State 8 is a holding state
+    #START: ---> SX
+
+\-------------------------------------------------------------------------
+\State Set 4 - Port Entry Recording
+
+S.S.4,
+S1,    \State 1 waits for the start command
+    #K^GOGOGO: SHOW 5, Pre-Session Port Entries, A(0);
+    SHOW 6, Total Port Entries, A(1);
+    SHOW 7, ITI Port Entries, A(2);
+    SHOW 8, Pre-CS Port Entries, A(3);
+    SHOW 9, CS Port Entries, A(4);
+    SHOW 10, Post-CS Port Entries, A(5) ---> S2
+
+S2,    \State 3 counts port entries during the delay
+    #R^DisPortEntry: ADD A(0); SET P(U) = X(1), Q(U) = 0;
+    SET B(S) = ^DisPortEntry, C(S) = X(1); ADD S;
+    SET B(S) = -987.987, C(S) = -987.987;
+    SET P(U+1) = -987.987, Q(U+1) = -987.987;
+    SHOW 5, Pres-Session Port Entries, A(0) ---> S3
+
+    #Z^SessionBegin: ---> S4
+
+S3,    \State 4 counts the port entry duration during the delay
+    #R^ConPortEntry: SET Q(U) = Q(U) + 0.01, A(7) = A(7) + 0.01 ---> SX
+
+    0.01": IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET Q(U) = 0.001, A(7) = A(7) + 0.001; ADD U;
+            IF S.S.3 = 1 [@DELAY, @CHECK1]
+            @DELAY: ---> S2
+            @CHECK1: IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+        @ACCEPT: ADD U; IF S.S.3 = 1 [@DELAY, @CHECK1]
+            @DELAY: ---> S2
+            @CHECK1: IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+
+S4,    \State 5 counts port entries during the ITI
+    #R^DisPortEntry: ADD A(1), A(2), D(T); SET P(U) = X(1), Q(U) = 0;
+    SET B(S) = ^DisPortEntry + 0.01, C(S) = X(1); ADD S;
+    SET B(S) = -987.987, C(S) = -987.987, X(23) = T;
+    SET P(U+1) = -987.987, Q(U+1) = -987.987;
+    SHOW 6, Total Port Entries, A(1);
+    SHOW 7, ITI Port Entries, A(2);
+    IF F(T) < 0 [@LATENCY, @NULL]
+        @LATENCY: SET F(T) = X(2) ---> S5
+        @NULL: ---> S5
+
+    #Z^StartPreCS: ---> S6
+    #Z^Shutdown: ---> S12
+
+S5,    \State 6 counts port entry duration during the ITI
+    #R^ConPortEntry: SET A(8) = A(8) + 0.01, A(9) = A(9) + 0.01;
+    SET Q(U) = Q(U) + 0.01 ---> SX
+
+    0.01": IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET A(8) = A(8) + 0.001, A(9) = A(9) + 0.001;
+        SET Q(U) = 0.001, X(24) = T, T = X(23), E(T) = E(T) + 0.001, T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S5
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+        @ACCEPT: SET X(24) = T, T = X(23), E(T) = E(T) + Q(U), T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+
+    #Z^Shutdown: IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET Q(U) = 0.001, X(24) = T, T = X(23), E(T) = E(T) + 0.001, T = X(24) ---> S12
+        @ACCEPT: SET X(24) = T, T = X(23), E(T) = E(T) + Q(U), T = X(24) ---> S12
+
+S6,    \State 7 counts port entries during the Pre-CS Period
+    #R^DisPortEntry: ADD A(1), A(3), G(T); SET P(U) = X(1), Q(U) = 0;
+    SET B(S) = ^DisPortEntry + 0.02, C(S) = X(1), R(V) = X(2); ADD S, V;
+    SET B(S) = -987.987, C(S) = -987.987, R(V) = -987.987;
+    SET P(U+1) = -987.987, Q(U+1) = -987.987, X(23) = T;
+    SHOW 6, Total Port Entries, A(1);
+    SHOW 8, Pre-CS Port Entries, A(3);
+    IF I(T) < 0 [@LATENCY, @NULL]
+        @LATENCY: SET I(T) = X(3) ---> S7
+        @NULL: ---> S7
+
+    #Z^StartCS: ---> S8
+    #Z^Shutdown: ---> S12
+
+
+
+S7,    \State 8 counts port entry duration during the Pre-CS Period
+    #R^ConPortEntry: SET A(8) = A(8) + 0.01, A(10) = A(10) + 0.01;
+    SET Q(U) = Q(U) + 0.01 ---> SX
+
+    0.01": IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET A(8) = A(8) + 0.001, A(10) = A(10) + 0.001;
+        SET Q(U) = 0.001, X(24) = T, T = X(23), H(T) = H(T) + 0.001, T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+        @ACCEPT: SET X(24) = T, T = X(23), H(T) = H(T) + Q(U), T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+
+    #Z^Shutdown: IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET Q(U) = 0.001, X(24) = T, T = X(23), H(T) = H(T) + 0.001, T = X(24) ---> S12
+        @ACCEPT: SET X(24) = T, T = X(23), H(T) = H(T) + Q(U), T = X(24) ---> S12
+
+S8,    \State 9 counts port entries during the CS Period
+    #R^DisPortEntry: ADD A(1), A(4), J(T); SET P(U) = X(1), Q(U) = 0;
+    SET B(S) = ^DisPortEntry + 0.03, C(S) = X(1), R(V) = X(2); ADD S, V;
+    SET B(S) = -987.987, C(S) = -987.987, R(V) = -987.987;
+    SET P(U+1) = -987.987, Q(U+1) = -987.987, X(23) = T;
+    SHOW 6, Total Port Entries, A(1);
+    SHOW 9, CS Port Entries, A(4);
+    IF L(T) < 0 [@LATENCY, @NULL]
+        @LATENCY: SET L(T) = X(3) ---> S9
+        @NULL: ---> S9
+
+    #Z^StartPostCS: ---> S10
+    #Z^Shutdown: ---> S12
+
+S9,    \State 10 counts port entry duration during the CS Period
+    #R^ConPortEntry: SET A(8) = A(8) + 0.01, A(11) = A(11) + 0.01;
+    SET Q(U) = Q(U) + 0.01 ---> SX
+
+    0.01": IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET A(8) = A(8) + 0.001, A(11) = A(11) + 0.001;
+        SET Q(U) = 0.001, X(24) = T, T = X(23), K(T) = K(T) + 0.001, T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+        @ACCEPT: SET X(24) = T, T = X(23), K(T) = K(T) + Q(U), T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+
+    #Z^Shutdown: IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET Q(U) = 0.001, X(24) = T, T = X(23), K(T) = K(T) + 0.001, T = X(24) ---> S12
+        @ACCEPT: SET X(24) = T, T = X(23), K(T) = K(T) + Q(U), T = X(24) ---> S12
+
+S10,    \State 11 counts port entries during the Post-CS Period
+    #R^DisPortEntry: ADD A(1), A(5), M(T); SET P(U) = X(1), Q(U) = 0;
+    SET B(S) = ^DisPortEntry + 0.04, C(S) = X(1), R(V) = X(2); ADD S, V;
+    SET B(S) = -987.987, C(S) = -987.987, R(V) = -987.987;
+    SET P(U+1) = -987.987, Q(U+1) = -987.987, X(23) = T;
+    SHOW 6, Total Port Entries, A(1);
+    SHOW 10, Post-CS Port Entries, A(5);
+    IF O(T) < 0 [@LATENCY, @NULL]
+        @LATENCY: SET O(T) = X(3) ---> S11
+        @NULL: ---> S11
+
+    #Z^ITItime: ---> S4
+    #Z^Shutdown: ---> S12
+
+S11,    \State 12 counts port entry duration during the Post-CS Period
+    #R^ConPortEntry: SET A(8) = A(8) + 0.01, A(12) = A(12) + 0.01;
+    SET Q(U) = Q(U) + 0.01 ---> SX
+
+    0.01": IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET A(8) = A(8) + 0.001, A(12) = A(12) + 0.001;
+        SET Q(U) = 0.001, X(24) = T, T = X(23), N(T) = N(T) + 0.001, T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+        @ACCEPT: SET X(24) = T, T = X(23), N(T) = N(T) + Q(U), T = X(24);
+        ADD U; IF (S.S.3 = 2) OR (S.S.3 = 7) [@ITI, @CHECK2]
+                @ITI: ---> S4
+                @CHECK2: IF S.S.3 = 3 [@PRECS, @CHECK3]
+                    @PRECS: ---> S6
+                    @CHECK3: IF (S.S.3 = 4) OR (S.S.3 = 5) [@CS, @CHECK4]
+                        @CS: ---> S8
+                        @CHECK4: IF S.S.3 = 6 [@POSTCS, @ERROR]
+                            @POSTCS: ---> S10
+                            @ERROR: SHOW 7, PE RECORDING CANNOT DETERMINE EPOCH, A(0) ---> S1
+
+    #Z^Shutdown: IF Q(U) < 0.01 [@GIVENOMINAL, @ACCEPT]
+        @GIVENOMINAL: SET Q(U) = 0.001, X(24) = T, T = X(23), N(T) = N(T) + 0.001, T = X(24) ---> S12
+        @ACCEPT: SET X(24) = T, T = X(23), N(T) = N(T) + Q(U), T = X(24) ---> S12
+
+S12,    \State 12 is a holding state
+    #START: ---> SX
+
+\-------------------------------------------------------------------------
+\State Set 5 - CS Delivery
+
+S.S.5,
+S1,    \State 1 waits for the start command
+    #K^GOGOGO: SET X(7) = 1" / (2 * Z(8)), X(10) = Z(5) * 1" ---> S2
+
+S2,    \State 2 waits for the StartCS Z-Pulse
+    #Z^StartCS: IF Z(7) <= 1.5 [@CLICK, @WHITENOISE]
+        @CLICK: ON ^Clicker; SET B(S) = ^Clicker, C(S) = X(1);
+        ADD S; SET B(S) = -987.987, C(S) = -987.987 ---> S3
+        @WHITENOISE: ON ^Whitenoise; SET B(S) = ^Whitenoise, C(S) = X(1);
+        ADD S; SET B(S) = -987.987, C(S) = -987.987 ---> S5
+
+    #Z^Shutdown: ---> S6
+
+S3,    \State 3 waits to alternate the clicker off
+    X(7)#T: OFF ^Clicker ---> S4
+
+    #Z^StartPostCS: OFF ^Clicker, ^Pump ---> S2
+    #Z^Shutdown: OFF ^Clicker, ^Pump ---> S6
+
+S4,    \State 4 waits to alternate the clicker on
+    X(7)#T: ON ^Clicker ---> S3
+
+    #Z^StartPostCS: OFF ^Clicker, ^Pump ---> S2
+    #Z^Shutdown: OFF ^Clicker, ^Pump ---> S6
+
+S5,    \State 5 waits to switch off the Whitenoise
+    #Z^StartPostCS: OFF ^Whitenoise ---> S2
+
+    #Z^Shutdown: OFF ^Whitenoise ---> S6
+
+S6,    \State 6 is a holding state
+    #START: ---> SX
+
+\-------------------------------------------------------------------------
+\State Set 6 - Master Box Determination and ITI generation
+
+S.S.6
+S1,    \State 1 responds to the start command by issuing a K-Pulse with its box number
+    0.25": IF S.S.7 = 1 [@RUN, @SKIPPED]
+        @RUN: IF (Z(9) = 0) OR (Z(9) > BOX) [@CALL, @WAIT]
+            @CALL: KBOX ---> SX
+            @WAIT: KZ(9); ADD X(12); IF X(12) > 12 [@ACCEPT, @STAY]
+                @ACCEPT: Z^Mastered; K^Acceptance ---> S2
+                @STAY: ---> SX
+        @SKIPPED: ---> S2
+
+    #K^Acceptance: ---> S2
+
+S2,    \State 2 checks if this box is the master box and allows the rest of the program to start
+    0.01": IF Z(9) = BOX [@MASTER, @SLAVE]
+        @MASTER: SHOW 1, Generating ITIs, Z(2); IF Z(2) + 1 >= 9 [@THREE, @MOVEON]
+            @THREE: SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y;
+            SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y;
+            SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y ---> S3
+            @MOVEON: IF Z(2) + 1 >= 6 [@TWO, @CHECK]
+                @TWO: SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y;
+                SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y ---> S3
+                @CHECK: IF Z(2) + 1 >= 3 [@ONE, @ELSE]
+                    @ONE: SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y ---> S3
+                    @ELSE: ---> S3
+        @SLAVE: SHOW 1, Waiting for Master Box, Z(9);
+        SET W(0) = -5, W(1) = -987.987 ---> S6
+
+    #K^NewBoxLoaded: ---> S2
+
+S3,    \State 3 will continue ITI generation
+    0.01": IF Z(2) + 1 - Y >= 3 [@FULL, @ELIF]
+        @FULL: SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y ---> SX
+        @ELIF: IF Z(2) + 1 - Y >= 2 [@PARTIAL, @ELIF]
+            @PARTIAL: SET W(Y) = Z(3) - Z(4); ADD Y; SET W(Y) = Z(3) + Z(4); ADD Y;
+            SET W(Y) = -987.987; SHOW 1, Selecting ITIs, Y;
+            SET Y = 0 ---> S4
+            @ELIF: IF Z(2) + 1 - Y >= 1 [@SINGLE, @NONE]
+                @SINGLE: SET W(Y) = Z(3); ADD Y; SET W(Y) = -987.987;
+                SHOW 1, Selecting ITIs, Y; SET Y = 0 ---> S4
+                @NONE: SET W(Y) = -987.987; SHOW 1, Selecting ITIs, Y;
+                SET Y = 0 ---> S4
+
+    #K^NewBoxLoaded: ---> S2
+
+S4,    \State 4 will select the ITIs
+    0.01": IF Y < Z(2) + 1 [@GENERATE, @COMPLETE]
+        @GENERATE: RANDD X(5) = W; IF X(5) > 0 [@ACCEPT, @REJECT]
+            @ACCEPT: SET Z(Y+14) = X(5); ADD Y ---> SX
+            @REJECT: ---> SX
+        @COMPLETE: SET Z(Y+14) = -987.987; K^ReadyITI;
+        SHOW 1, Waiting for ITI collection, Z(14);
+        SET X(13) = Z(2), X(14) = Z(3), X(15) = Z(4) ---> S5
+
+    #K^NewBoxLoaded: ---> S2
+
+S5,    \State 5 waits for the boxes to finish collecting ITIs
+    #K^Collected: SHOW 1, Ready to Start, Z(14) ---> S8
+    10": Z^NoFriends; SHOW 1, Ready to Start, Z(14) ---> S8
+
+    #K^NewBoxLoaded: ---> S2
+
+S6,    \Slave boxes wait in State 7 until they can collect ITIs
+    #K^ReadyITI: SHOW 1, Collecting ITIs, Z(2);
+    SET X(13) = Z(2), X(14) = Z(3), X(15) = Z(4) ---> S7
+
+    #K^NewBoxLoaded: ---> S2
+
+S7,    \Slave boxes collect the ITI values from the Master Box
+    0.01": SET S = Z(9); IF Y < (Z(2) + 1) [@COLLECT, @COMPLETE]
+        @COLLECT: GETVAL Z(Y+14) = S, Z(Y+14); ADD Y ---> SX
+        @COMPLETE: SET Z(Y+14) = -987.987; K^Collected;
+        SHOW 1, Ready to Start, Z(14); SET S = 0 ---> S9
+
+    #K^NewBoxLoaded: ---> S2
+
+S8,    \State 8 is where the master box will issue the GOGOGO K-Pulse
+    \This will automatically synchronise all boxes to the same interrupt
+    #START: K^GOGOGO ---> S10
+
+    #K^NewBoxLoaded ! #K^Reacquire: ZEROARRAY W; SET Y = 0 ---> S1
+
+S9,    \State 9 is a holding state, but will accept the Reacquire K-Pulse
+    #START: ---> S10
+
+    #K^Reacquire: SET S = Z(9); GETVAL Z(2) = S, Z(2);
+    GETVAL Z(3) = S, Z(3), Z(4) = S, Z(4);
+    SET S = 0, Y = 0 ---> S1
+
+    #K^NewBoxLoaded: ---> S2
+
+S10,    \State 10 a final holding state
+    #START: ---> SX
+
+\-------------------------------------------------------------------------
+\State Set 7 - Pre Session Screen Updater
+
+S.S.7,
+S1,
+    1": IF (S.S.1 < 4) AND (S.S.6 < 5)[@DISPLAY, @HOLD]
+        @DISPLAY: SHOW 3, Number of Trials, Z(2);
+        SHOW 4, CS Duration, Z(5);
+        SHOW 5, Pump Duration, Z(6);
+        IF Z(7) < 1.5 [@CLICK, @WHITENOISE]
+            @CLICK: SHOW 2, Clicker CS, Z(7) ---> SX
+            @WHITENOISE: SHOW 2, Whitenoise CS, Z(7) ---> SX
+        @HOLD: ---> S2
+
+    #Z^Mastered ! #K^Acceptance: ---> S2
+
+S2,    \State 2 refreshes the screen while waiting for the boxes to sort things out
+    1": IF (S.S.1 < 4) AND (S.S.6 < 8) [@DISPLAY, @HOLD]
+        @DISPLAY: SHOW 3, Number of Trials, Z(2);
+        SHOW 4, CS Duration, Z(5);
+        SHOW 5, Pump Duration, Z(6);
+        IF Z(7) < 1.5 [@CLICK, @WHITENOISE]
+            @CLICK: SHOW 2, Clicker CS, Z(7) ---> SX
+            @WHITENOISE: SHOW 2, Whitenoise CS, Z(7) ---> SX
+        @HOLD: ---> S3
+
+    #K^Collected ! #Z^NoFriends: SHOW 1, Ready to Start, Z(14);
+        SHOW 2, Session Length, Z(0);
+        SHOW 4, Number of Trials, Z(2);
+        SHOW 5, CS Duration, Z(5);
+        SHOW 6, Master Box, Z(9);
+        SHOW 7, Pre-Session Delay, Z(1);
+        IF Z(7) < 1.5 [@CLICK, @WHITENOISE]
+            @CLICK: SHOW 3, Clicker CS, Z(7) ---> S3
+            @WHITENOISE: SHOW 3, Whitenoise CS, Z(7) ---> S3
+
+    #K^NewBoxLoaded: ---> S1
+
+S3,    \State 3 checks that the mean ITI and its variance have not changed
+    \then refreshes the screen once the master box and slave boxes have sorted things out
+    1": IF ((X(13) = Z(2)) AND (X(14) = Z(3))) AND (X(15) = Z(4)) [@MEMORYOK, @REACQUIRE]
+        @MEMORYOK: IF S.S.1 < 4 [@DISPLAY, @HOLD]
+            @DISPLAY: SHOW 1, Ready to Start, Z(14);
+            SHOW 2, Session Length, Z(0);
+            SHOW 4, Number of Trials, Z(2);
+            SHOW 5, CS Duration, Z(5);
+            SHOW 6, Master Box, Z(9);
+            SHOW 7, Pre-Session Delay, Z(1);
+            IF Z(7) < 1.5 [@CLICK, @WHITENOISE]
+                @CLICK: SHOW 3, Clicker CS, Z(7) ---> SX
+                @WHITENOISE: SHOW 3, Whitenoise CS, Z(7) ---> SX
+            @HOLD: ---> S4
+        @REACQUIRE: K^Reacquire; SHOW 1, Recalculating ITIs, Z(2); CLEAR 2, 10 ---> S2
+
+    #K^NewBoxLoaded: ---> S1
+
+    #K^GOGOGO: SHOW 16, Long PE Alert, A(14);
+    SHOW 17, Short PE Alert, A(15), 18, High Frequency Alert, A(16);
+    SET X(8) = SECSTODAY; SET X(9) = X(8) + Z(0) + Z(1) - (^Comeback * 60);
+
+    SET V = X(9) / 3600;
+    ~V := Trunc(V);~; SET X(10) = V;
+
+    \SET X(11) to the finish time (minutes) at the end of the session and round it
+    SET V = X(9) / 3600;
+    ~V := Frac(V);~;
+    SET V = V * 60;
+    ~V := Round(V);~; SET X(11) = V; SET V = 0;
+
+    \SET X(9) to be the time in HH.MM format
+    SET X(9) = X(10) + (X(11) / 100);
+    IF X(9) > 24 [@TOMORROW, @TODAY]
+        @TOMORROW: SET X(9) = X(9) - 24;
+        SHOW 11, Come Back Tomorrow, X(9) ---> S4
+        @TODAY:    SHOW 11, Come Back At, X(9) ---> S4
+
+S4,    \States 4-7 monitor port entries for unusual properties.
+    \Unusual properties include:
+    \PE Duration > Z(10) (A(14))
+    \5 point moving average of PE Duration < Z(11) (A(15))
+    \5 point moving average of inter-response intervals < Z(12) (A(16))
+
+    #R^DisPortEntry: IF U = 5 [@IRI, @NULL]
+        @IRI: SET X(16) = P(1) - P(0), X(17) = P(2) - P(1);
+        SET X(18) = P(3) - P(2), X(19) = P(4) - P(3);
+        SET X(20) = P(5) - P(4); ARITHMETICMEAN X(21) = X, 16, 20;
+        IF X(21) < Z(12) [@SHORTIRI, @OK]
+            @SHORTIRI: ADD A(16); SHOW 18, High Frequency Alert, A(16) ---> S5
+            @OK: ---> S5
+        @NULL: IF U > 5 [@MOVINGAVERAGE, @NULL]
+            @MOVINGAVERAGE: SET X(16) = X(17), X(17) = X(18), X(18) = X(19);
+            SET X(19) = X(20), X(20) = P(U) - P(U-1); ARITHMETICMEAN X(21) = X, 16, 20;
+            IF X(21) < Z(12) [@SHORTIRI, @NULL]
+                @SHORTIRI: ADD A(16); SHOW 18, High Frequency Alert, A(16) ---> S7
+                @NULL: ---> S7
+            @NULL: ---> S5
+
+    #Z^Shutdown: ---> S8
+
+
+S5,    \State 5 waits for PE Duration to finish
+    #R^ConPortEntry: ---> SX
+    0.01": IF Q(U-1) > Z(10) [@LONGPE, @NORMALPE]
+        @LONGPE: ADD A(14); SHOW 16, Long PE Alert, A(14);
+        IF U >= 5 [@AVERAGE, @NULL]
+            @AVERAGE: ARITHMETICMEAN X(22) = Q, U-5, U-1; IF X(22) < Z(11) [@SHORTPE, @NULL]
+                @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S4
+                @NULL: ---> S4
+            @NULL: ---> S4
+        @NORMALPE: IF U >= 5 [@AVERAGE, @NULL]
+            @AVERAGE: ARITHMETICMEAN X(22) = Q, U-5, U-1; IF X(22) < Z(11) [@SHORTPE, @NULL]
+                @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S4
+                @NULL: ---> S4
+            @NULL: ---> S4
+
+    #Z^Shutdown: IF Q(U) > Z(10) [@LONGPE, @NORMALPE]
+        @LONGPE: ADD A(14); SHOW 16, Long PE Alert, A(14);
+        IF U = 4 [@AVERAGE, @NULL]
+            @AVERAGE: ARITHMETICMEAN X(22) = Q, 0, 4; IF X(22) < Z(11) [@SHORTPE, @NULL]
+                @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S8
+                @NULL: ---> S8
+            @NULL: ---> S8
+        @NORMALPE: IF U = 4 [@AVERAGE, @NULL]
+            @AVERAGE: ARITHMETICMEAN X(22) = Q, 0, 4; IF X(22) < Z(11) [@SHORTPE, @NULL]
+                @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S8
+                @NULL: ---> S8
+            @NULL: ---> S8
+
+S6,    \State 6 runs moving averages for IRIs
+    #R^DisPortEntry: SET X(16) = X(17), X(17) = X(18), X(18) = X(19);
+    SET X(19) = X(20), X(20) = P(U) - P(U-1); ARITHMETICMEAN X(21) = X, 16, 20;
+    IF X(21) < Z(12) [@SHORTIRI, @NULL]
+        @SHORTIRI: ADD A(16); SHOW 18, High Frequency Alert, A(16) ---> S7
+        @NULL: ---> S7
+
+    #Z^Shutdown: ---> S8
+
+S7,    \State 7 checks PE Durations with moving averages
+    #R^ConPortEntry: ---> SX
+
+    0.01": ARITHMETICMEAN X(22) = Q, U-5, U-1; IF Q(U-1) > Z(10) [@LONGPE, @NORMALPE]
+        @LONGPE: ADD A(14); SHOW 16, Long PE Alert, A(14);
+        IF X(22) < Z(11) [@SHORTPE, @NULL]
+            @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S6
+            @NULL: ---> S6
+        @NORMALPE: IF X(22) < Z(11) [@SHORTPE, @NULL]
+            @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S6
+            @NULL: ---> S6
+
+    #Z^Shutdown: ARITHMETICMEAN X(22) = Q, U-4, U; IF Q(U) > Z(10) [@LONGPE, @NORMALPE]
+        @LONGPE: ADD A(14); SHOW 16, Long PE Alert, A(14);
+        IF X(22) < Z(11) [@SHORTPE, @NULL]
+            @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S8
+            @NULL: ---> S8
+        @NORMALPE: IF X(22) < Z(11) [@SHORTPE, @NULL]
+            @SHORTPE: ADD A(15); SHOW 17, Short PE Alert, A(15) ---> S8
+            @NULL: ---> S8
+
+S8,    \State 8 is a holding state
+    #START: ---> SX
