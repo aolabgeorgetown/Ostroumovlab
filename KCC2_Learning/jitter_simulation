@@ -1,317 +1,197 @@
 a = 0
-
 b = 5
-
 cells = 6
-
 for cells = 1:cells
-
     for i = 1: 50
-
         N = randi(10)
-
         sample_tot {1,cells}{1,i} =  sort(a + (b-a)*rand(1,N));
-
     end 
-
 end 
 
-
-
 sample_tot {1,1} = sample_tot {1,2} 
-
-
 
 indexofVTAGABA = [1:cells]
 
 
-
-
-
       %% crosscorrelation
-
-      addpath(genpath('E:\All_Pavlovian\Cell explorer tutorial + all scripts'))
-
-      %
-
+ %
       
-
             filecombos = nchoosek(indexofVTAGABA,2);
-
             seconds = 0:0.001:4.999;
-
             jitter_width = 0.100;
-
             titleforepoch = ["Simulation"];
-
             spikeid = indexofVTAGABA;
 
 
-
-
-
             [sample_xcorr_IDs, sample_xcorr_average] = crosscorrelation (sample_tot, seconds, jitter_width, filecombos,titleforepoch(1),spikeid);
-
 %
-
             % jitter portion 
-
             edges = 0:0.001:4.999;
-
             [sample_alltrialsjitter, sample_jittermean, sample_jitterstd] = jitteranalysis (sample_tot, filecombos, edges);
-
            
-
 %
-
   
-
             [tally_sample, totpairs_sample ,percentsynch_sample] = significancebands(sample_jittermean, sample_jitterstd, sample_xcorr_average, titleforepoch(1),sample_xcorr_IDs, filecombos);
-
    
-
             
-
             
-
             
-
 %%
-
            
-
 function [IDspaired, allaveragehists] = crosscorrelation (epoch, seconds, jitter_width, filecombos,titleforepoch, spikeid)
-
 allaveragehists = {};
-
 IDspaired = {};
-
 figure();
-
 numberofplots = ceil(length(filecombos)/8);
-
-
-
 
 
 if length(filecombos)>1; 
-
     for file = 1: length(filecombos);
 
-
-
         n1 = epoch{1,filecombos(file, 1)};
-
         n2 = epoch{1,filecombos(file, 2)};
-
         finalhist = [];
-
         for j = 1: length(epoch{1,1});
-
             xcorr1 = hist(n1{1,j},seconds);
-
             xcorr2 = hist(n2{1,j},seconds);
 
-
-
             [c,lags] = xcorr (xcorr1, xcorr2, 10);
-
             finalhist = [finalhist; c] ;
 
-
-
         end 
-
         averagehist =[];
-
         for w = 1:21;
-
            waverage = mean(finalhist(:,w));
-
            averagehist = [averagehist; waverage];
-
         end 
-
             averagehist= transpose(averagehist);
-
             allaveragehists{file} = averagehist;
 
-
-
             subplot(numberofplots,8,file);
-
             b = bar (lags, averagehist);
-
             sgtitle (string(titleforepoch));
-
             title(sprintf('Neuron ID ' + string(spikeid(filecombos(file, 1))) + ' & ' + string(spikeid(filecombos(file, 2)))));
-
             IDspaired{file} = ('Neuron ID' + string(spikeid(filecombos(file, 1))) + ' & ' + string(spikeid(filecombos(file, 2))));
-
     end 
-
+end 
 end 
 
      
+function [alltrialsjitter, jittermean, jitterstd] = jitteranalysis (epoch, filecombos, edges)
+alltrialsjitter = {};
+jittermean = {};
+jitterstd = {};
+for file = 1: length(filecombos);
+    n1 = epoch{1,filecombos(file, 1)};
+    n2 = epoch{1,filecombos(file, 2)};
+    eachtrialjitter = {};
+    eachtrialmean = {};
+    for temp = 1: length(n1)  ;
+        
+        spike1 = n1{temp}'
+        spike2 = hist(n2{temp}', edges);
+        jittered = intervaljitter(spike1 , 0.100); 
+        finalhist = [] ;
+        for jit_xcorr = 1: 100;
+            b = jittered(jit_xcorr,:) ;
+            b = hist(b, edges);
+            [c,lags] = xcorr (b, spike2 , 10);
+            finalhist = [finalhist; c] ;
+        
+        
+        eachtrialjitter{1,temp} = finalhist;
+        eachtrialmean{1,temp} = mean(finalhist);
+        eachtrialstd {1,temp} = std(finalhist); 
+        
+    end 
+    alltrialsjitter{1,file} = eachtrialjitter;
+    jittermean{1,file} = eachtrialmean;
+    jitterstd {1,file} = eachtrialstd;
+    end
+end 
+end 
 
 function [jittered]=  intervaljitter (n1, jitter_width);
-
 jittered = [];
-
 for j = 1: 100;
-
     n1_jitt_int=(jitter_width*2)*floor( n1/(jitter_width*2) ) + (jitter_width*2)*rand( 1,length(n1) );
-
     jittered = [jittered;n1_jitt_int];
-
 end
-
-
-
-function [tally, totpairs ,percentsynch] = significancebands (CS_jittermean, CS_jitterstd,CS_xcorr_average,titleforepoch,CS_xcorr_IDs,filecombos)
-
-numberofplots = ceil(length(filecombos)/8);
-
-jittermeans = [];
-
-    for i = 1: length(CS_jittermean);
-
-        firstpair = CS_jittermean{1,i} ;
-
-        concatalltrials = [];
-
-            for j = 1: length(firstpair);
-
-                concatalltrials = [concatalltrials;  cell2mat(firstpair(j))] ;
-
-            end 
-
-        averageofalltrials = mean(concatalltrials) ;
-
-        
-
-     jittermeans = [jittermeans; averageofalltrials];
-
-    end 
-
-     
-
-    
-
-    
-
-jitterstd = [];
-
-    for i = 1: length(CS_jitterstd);
-
-        firstpair = CS_jitterstd{1,i} ;
-
-        concatalltrials = [];
-
-            for j = 1: length(firstpair);
-
-                concatalltrials = [concatalltrials;  cell2mat(firstpair(j))] ;
-
-            end 
-
-        averageofalltrials = mean(concatalltrials) ;
-
-        
-
-     jitterstd = [jitterstd; averageofalltrials];
-
-    end 
-
-     
-
-
-
-xcorr_average = [];
-
-    for i = 1:length(CS_xcorr_average);
-
-        firstpair =  CS_xcorr_average{1,i};
-
-        xcorr_average= [xcorr_average; firstpair];
-
-    end
-
-    
-
-
-
-tally = [0];
-
-figure()
-
-for pair= 1:length(CS_jittermean);
-
-    sigma = jitterstd*2 + jittermeans;
-
-    acceptanceband = repelem(max(sigma(pair,:)),21) ;     
-
-    for c = 1:21;
-
-      averagevalue = xcorr_average (pair,c);
-
-      acceptance = acceptanceband (c);
-
-            if averagevalue > acceptance;
-
-               tally = tally + 1;
-
-               %disp(string(CS_xcorr_IDs(pair)));
-
-               break
-
-            end 
-
-    end 
-
-
-
-   
-
-    averagexcorr = xcorr_average(pair,:);
-
-    lag = [-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10];
-
-
-
-    meanjitteroutput = jittermeans(pair,:);
-
-    subplot(numberofplots,8,pair);
-
-    bar (lag, averagexcorr);
-
-    hold on ;
-
-    plot(lag, acceptanceband, '--', color = 'red');
-
-    hold on ;
-
-    plot(lag, meanjitteroutput,'-', color = 'blue');
-
-    plot(lag, sigma(pair,:), '-', color = 'black');
-
-    sgtitle (string(titleforepoch));
-
-    title(sprintf(string(CS_xcorr_IDs(pair))));
-
 end 
 
+function [tally, totpairs ,percentsynch] = significancebands (CS_jittermean, CS_jitterstd,CS_xcorr_average,titleforepoch,CS_xcorr_IDs,filecombos)
+numberofplots = ceil(length(filecombos)/8);
+jittermeans = [];
+    for i = 1: length(CS_jittermean);
+        firstpair = CS_jittermean{1,i} ;
+        concatalltrials = [];
+            for j = 1: length(firstpair);
+                concatalltrials = [concatalltrials;  cell2mat(firstpair(j))] ;
+            end 
+        averageofalltrials = mean(concatalltrials) ;
+        
+     jittermeans = [jittermeans; averageofalltrials];
+    end 
+     
+    
+    
+jitterstd = [];
+    for i = 1: length(CS_jitterstd);
+        firstpair = CS_jitterstd{1,i} ;
+        concatalltrials = [];
+            for j = 1: length(firstpair);
+                concatalltrials = [concatalltrials;  cell2mat(firstpair(j))] ;
+            end 
+        averageofalltrials = mean(concatalltrials) ;
+        
+     jitterstd = [jitterstd; averageofalltrials];
+    end 
+     
 
+xcorr_average = [];
+    for i = 1:length(CS_xcorr_average);
+        firstpair =  CS_xcorr_average{1,i};
+        xcorr_average= [xcorr_average; firstpair];
+    end
+    
+
+tally = [0];
+figure()
+for pair= 1:length(CS_jittermean);
+    sigma = jitterstd*2 + jittermeans;
+    acceptanceband = repelem(max(sigma(pair,:)),21) ;     
+    for c = 1:21;
+      averagevalue = xcorr_average (pair,c);
+      acceptance = acceptanceband (c);
+            if averagevalue > acceptance;
+               tally = tally + 1;
+               %disp(string(CS_xcorr_IDs(pair)));
+               break
+            end 
+    end 
+
+   
+    averagexcorr = xcorr_average(pair,:);
+    lag = [-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10];
+
+    meanjitteroutput = jittermeans(pair,:);
+    subplot(numberofplots,8,pair);
+    bar (lag, averagexcorr);
+    hold on ;
+    plot(lag, acceptanceband, '--', color = 'red');
+    hold on ;
+    plot(lag, meanjitteroutput,'-', color = 'blue');
+    plot(lag, sigma(pair,:), '-', color = 'black');
+    sgtitle (string(titleforepoch));
+    title(sprintf(string(CS_xcorr_IDs(pair))));
+end 
 
 display(string(titleforepoch))
-
 display('Total pairs significant: ' + string(tally));
-
 display('Total pairs: ' + string(length(CS_jittermean)));
-
 display('% synchronized: '+ string((tally / (length(CS_jittermean ) )* 100)));
-
 totpairs = (length(CS_jittermean ))
-
 percentsynch = (tally / (length(CS_jittermean ) )* 100)
-
 xlabel (string(percentsynch )+' % Synchronized ' );
+end 
+           
